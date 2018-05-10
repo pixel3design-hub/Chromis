@@ -28,9 +28,11 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
@@ -53,7 +55,7 @@ public class AppConfig implements AppProperties {
     private DataLogicSystem dlSystem;
 
     class SortedProperties extends Properties {
-
+     
         public Enumeration keys() {
             Enumeration keysEnum = super.keys();
             Vector<String> keyList = new Vector<String>();
@@ -63,6 +65,7 @@ public class AppConfig implements AppProperties {
             Collections.sort(keyList);
             return keyList.elements();
         }
+         
     }
 
     protected AppConfig(File configFile) {
@@ -141,7 +144,7 @@ public class AppConfig implements AppProperties {
     }
 
     public void save() throws IOException {
-        Set set = m_propsconfig.entrySet();
+        Set set = m_propsconfig.entrySet();        
         SortedProperties sortedpropsconfig = new SortedProperties();
 
         Iterator i = set.iterator();

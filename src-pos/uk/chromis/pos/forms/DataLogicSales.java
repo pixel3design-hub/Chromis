@@ -125,7 +125,8 @@ public class DataLogicSales extends BeanFactoryDataSingle {
             Datas.STRING,
             Datas.STRING,
             Datas.DOUBLE,
-            Datas.STRING
+            Datas.STRING,
+            Datas.DOUBLE
         };
         stockdiaryDatas = new Datas[]{
             Datas.STRING, // 0 - ID  
@@ -1195,7 +1196,8 @@ public class DataLogicSales extends BeanFactoryDataSingle {
                     + "FROM TICKETLINES L, TAXES T WHERE L.TAXID = T.ID AND L.TICKET = ? ORDER BY L.LINE", SerializerWriteString.INSTANCE, new SerializerReadClass(TicketLineInfo.class
                     )).list(ticket.getId()));
             ticket.setPayments(new PreparedSentence(s //                    , "SELECT PAYMENT, TOTAL, TRANSID TENDERED FROM PAYMENTS WHERE RECEIPT = ?" 
-                    , "SELECT PAYMENT, TOTAL, TRANSID, TENDERED, CARDNAME FROM PAYMENTS WHERE RECEIPT = ? ", SerializerWriteString.INSTANCE, new SerializerReadClass(PaymentInfoTicket.class
+                    ,
+                     "SELECT PAYMENT, TOTAL, TRANSID, TENDERED, CARDNAME FROM PAYMENTS WHERE RECEIPT = ? ", SerializerWriteString.INSTANCE, new SerializerReadClass(PaymentInfoTicket.class
                     )).list(ticket.getId()));
         }
         return ticket;
@@ -1293,7 +1295,7 @@ public class DataLogicSales extends BeanFactoryDataSingle {
                             l.getProductAttSetInstId(), -l.getMultiply(), l.getPrice(),
                             ticket.getUser().getName(),
                             m_dlSync.getSiteGuid(),
-                            null, null, null, null, null, null, null, null, null
+                            l.getRefundQty(), null, null, null, null, null, null, null, null
                         });
                     }
                 }
@@ -1616,7 +1618,7 @@ public class DataLogicSales extends BeanFactoryDataSingle {
             @Override
             public int execInTransaction(Object params) throws BasicException {
                 /* Set up adjust parameters */
-                Object[] adjustParams = new Object[5];
+                Object[] adjustParams = new Object[6];
                 Object[] paramsArray = (Object[]) params;
                 adjustParams[0] = paramsArray[3]; //product ->Location
                 adjustParams[1] = paramsArray[4]; //location -> Product
@@ -1627,7 +1629,7 @@ public class DataLogicSales extends BeanFactoryDataSingle {
                 } catch (Exception ex) {
                     adjustParams[4] = m_dlSync.getSiteGuid();
                 }
-
+                adjustParams[5] = paramsArray[10]; //refund units
                 int as = adjustStock(adjustParams);
 
                 if (!isCentral) {
@@ -1658,7 +1660,7 @@ public class DataLogicSales extends BeanFactoryDataSingle {
         };
     }
 
-    /**
+ /**
      * @param params[0] Product ID
      * @param params[1] location Location to adjust from
      * @param params[2] Attribute ID
@@ -1672,12 +1674,13 @@ public class DataLogicSales extends BeanFactoryDataSingle {
             /* If this is a kit, i.e. has hits, call recursively for each product */
             int as = 0;
             for (ProductsRecipeInfo component : kit) {
-                Object[] adjustParams = new Object[5];
+                Object[] adjustParams = new Object[6];
                 adjustParams[0] = params[0];
                 adjustParams[1] = component.getProductKitId();
                 adjustParams[2] = params[2];
                 adjustParams[3] = ((Double) params[3]) * component.getQuantity();
                 adjustParams[4] = params[4];
+                adjustParams[5] = params[5];
                 as += adjustStock(adjustParams);
             }
             return as;
@@ -1689,19 +1692,25 @@ public class DataLogicSales extends BeanFactoryDataSingle {
                             new SerializerWriteBasicExt(stockAdjustDatas, new int[]{0, 1, 2, 3, 4})).exec(params);
             return 1;
         } else {
-            /* If not, adjust the stock */
-            int updateresult = ((Object[]) params)[2] == null // si ATTRIBUTESETINSTANCE_ID is null
-                    ? new PreparedSentence(s, "UPDATE STOCKCURRENT SET UNITS = (UNITS + ?) WHERE LOCATION = ? AND PRODUCT = ? AND ATTRIBUTESETINSTANCE_ID IS NULL AND SITEGUID = ? ", new SerializerWriteBasicExt(stockAdjustDatas, new int[]{3, 0, 1, 4})).exec(params)
-                    : new PreparedSentence(s, "UPDATE STOCKCURRENT SET UNITS = (UNITS + ?) WHERE LOCATION = ? AND PRODUCT = ? AND ATTRIBUTESETINSTANCE_ID = ? AND SITEGUID = ? ", new SerializerWriteBasicExt(stockAdjustDatas, new int[]{3, 0, 1, 2, 4})).exec(params);
 
+            int updateresult;
+            if ((Double) params[5] > 0.00) {
+                updateresult = ((Object[]) params)[2] == null // si ATTRIBUTESETINSTANCE_ID is null
+                        ? new PreparedSentence(s, "UPDATE STOCKCURRENT SET UNITS = (UNITS + ?) WHERE LOCATION = ? AND PRODUCT = ? AND ATTRIBUTESETINSTANCE_ID IS NULL AND SITEGUID = ? ", new SerializerWriteBasicExt(stockAdjustDatas, new int[]{5, 0, 1, 4})).exec(params)
+                        : new PreparedSentence(s, "UPDATE STOCKCURRENT SET UNITS = (UNITS + ?) WHERE LOCATION = ? AND PRODUCT = ? AND ATTRIBUTESETINSTANCE_ID = ? AND SITEGUID = ? ", new SerializerWriteBasicExt(stockAdjustDatas, new int[]{5, 0, 1, 2, 4})).exec(params);
+            } else {
+                updateresult = ((Object[]) params)[2] == null // si ATTRIBUTESETINSTANCE_ID is null
+                        ? new PreparedSentence(s, "UPDATE STOCKCURRENT SET UNITS = (UNITS + ?) WHERE LOCATION = ? AND PRODUCT = ? AND ATTRIBUTESETINSTANCE_ID IS NULL AND SITEGUID = ? ", new SerializerWriteBasicExt(stockAdjustDatas, new int[]{3, 0, 1, 4})).exec(params)
+                        : new PreparedSentence(s, "UPDATE STOCKCURRENT SET UNITS = (UNITS + ?) WHERE LOCATION = ? AND PRODUCT = ? AND ATTRIBUTESETINSTANCE_ID = ? AND SITEGUID = ? ", new SerializerWriteBasicExt(stockAdjustDatas, new int[]{3, 0, 1, 2, 4})).exec(params);
+
+            }        
             if (updateresult == 0) {
                 new PreparedSentence(s, "INSERT INTO STOCKCURRENT (LOCATION, PRODUCT, ATTRIBUTESETINSTANCE_ID, UNITS, SITEGUID) VALUES (?, ?, ?, ?, ?)", new SerializerWriteBasicExt(stockAdjustDatas, new int[]{0, 1, 2, 3, 4})).exec(params);
             }
+
             return 1;
         }
-
     }
-
     public void addProductListItem(String listName, String ProductID) throws BasicException {
         new PreparedSentence(s, "INSERT INTO PRODUCTLISTS (LISTNAME, PRODUCT) VALUES ('"
                 + listName + "','" + ProductID + "')", null).exec();
@@ -1771,7 +1780,7 @@ public class DataLogicSales extends BeanFactoryDataSingle {
         PreparedSentence p = (attsetinstid == null)
                 ? new PreparedSentence(s, "SELECT UNITS FROM STOCKCURRENT WHERE LOCATION = ? AND PRODUCT = ? AND SITEGUID = ? AND ATTRIBUTESETINSTANCE_ID IS NULL ", new SerializerWriteBasic(Datas.STRING, Datas.STRING, Datas.STRING), SerializerReadDouble.INSTANCE)
                 : new PreparedSentence(s, "SELECT UNITS FROM STOCKCURRENT WHERE LOCATION = ? AND PRODUCT = ? AND SITEGUID = ? AND ATTRIBUTESETINSTANCE_ID = ? ", new SerializerWriteBasic(Datas.STRING, Datas.STRING, Datas.STRING, Datas.STRING), SerializerReadDouble.INSTANCE);
-        Double d = (Double) p.find(warehouse, id,  siteGuid, attsetinstid);
+        Double d = (Double) p.find(warehouse, id, siteGuid, attsetinstid);
         return d == null ? 0.0 : d;
     }
 
